@@ -1,27 +1,31 @@
 #!/usr/bin/python3
 
-import os
+
 from argparse import ArgumentParser
-import difflib
-from graphviz import Digraph
-import itertools
+
 import matplotlib.pyplot as plt
+
 import networkx as nx
-from networkx.drawing.nx_agraph import graphviz_layout
 from networkx.algorithms.isomorphism import DiGraphMatcher
+from networkx.drawing.nx_agraph import graphviz_layout
+
 import pandas
+
 
 '''
 Represent Dagstuhl arguments as graphs
 
-Usage: python3 dagstuhl_preprocessing.py -evidence_directory -claim_directory -raw_files
-Example: python3 dagstuhl_preprocessing.py ../dagstuhl-15512-argquality-corpus-v2/dagstuhl-15512-argquality-corpus-v2/dagstuhl_segmenter_output_corrected/ ../dagstuhl-15512-argquality-corpus-v2/dagstuhl-15512-argquality-corpus-v2/claims/ ../dagstuhl-15512-argquality-corpus-v2/dagstuhl-15512-argquality-corpus-v2/dagstuhl-15512-argquality-corpus-unannotated/
+Usage: python3 reconstruct_graphs.py -dataset
+
+Example: python3 reconstruct_graphs.py\
+ ../../../../dagstuhl-15512-argquality-corpus-v2/dagstuhl_labeled.csv
 '''
 
-def arg_to_dict(df):
+
+def structure_arguments(df):
     '''
-    Assign ids to the text units, 
-    define argument structures
+    Assign ids to the text units,
+    represent argument structures with dictionaries
     '''
 
     counter = 0
@@ -30,10 +34,7 @@ def arg_to_dict(df):
     arg_structure = {}
 
     for index, record in df.iterrows():
-        arg_id = record[0]
-        arg1 = record[3]
-        arg2 = record[4]
-        rel = record[2]
+        arg_id, _, rel, arg1, arg2 = record
         if arg_id not in arg_ids:
             arg_ids[arg_id] = {}
             arg_ids_inv[arg_id] = {}
@@ -48,33 +49,30 @@ def arg_to_dict(df):
             counter += 1
 
         if rel != 'NoRel':
-            record = (arg_ids[arg_id][arg1], arg_ids[arg_id][arg2], {'rel': rel})
+            record = (arg_ids[arg_id][arg1],
+                      arg_ids[arg_id][arg2], {'rel': rel})
             arg_structure[arg_id].append(record)
 
     return arg_ids, arg_ids_inv, arg_structure
 
 
 def to_graph(arg_structure):
-    '''Transform to the graph representation'''
-    
-    G = nx.DiGraph()
-    G.add_edges_from(arg_structure) # value of the dict
-    num_nodes = G.number_of_nodes()
-    print(num_nodes)
+    '''Transform dictionaries to the graph representations'''
 
-    return G, num_nodes
+    g = nx.DiGraph()
+    g.add_edges_from(arg_structure)
+    return g, num_nodes
 
 
-def check_isomorphism(Arg_list):
+def group_into_isomorphic_families(argument_graphs):
     '''
-    Find unique argument structures checking graphs 
-    for isomorphism
+    Find unique argument structures and group them
+    into families
+    TODO: check for isomorphism taking into account edges (rel, sem_rel)
     '''
 
-    # TODO: check for isomorphism taking into account edges (rel, sem_rel)
-    unclassified_graphs = Arg_list
+    unclassified_graphs = argument_graphs
     graph_families = []
-
     for unclassified_graph in unclassified_graphs:
         for graph_family in graph_families:
             family_member = graph_family[0]
@@ -88,12 +86,13 @@ def check_isomorphism(Arg_list):
     return graph_families
 
 
-def show_graph(G, num, n_samples):
+def render_graph(g, num, n_samples):
 
-    pos = graphviz_layout(G, prog='dot')
-    nx.draw(G, pos, with_labels=False, font_weight='bold')
-    edge_sem_labels = nx.get_edge_attributes(G,'rel')
-    #nx.draw_networkx_edge_labels(G, pos, labels = edge_sem_labels)
+    pos = graphviz_layout(g, prog='dot')
+    nx.draw(g, pos, with_labels=False, font_weight='bold')
+    edge_sem_labels = nx.get_edge_attributes(g, 'rel')
+    # uncomment to print edge labels
+    # nx.draw_networkx_edge_labels(G, pos, labels = edge_sem_labels)
     plt.savefig('{}_{}_sampl.png'.format(num, n_samples), format='png')
     plt.close()
 
@@ -103,15 +102,15 @@ if __name__ == '__main__':
     parser = ArgumentParser(
         description='Show labeled data')
     parser.add_argument(
-        'dataset', help='Path to the file containing the dataset')
+        'dataset', help='Path to the file containing labeled dataset')
     args = parser.parse_args()
 
     df = pandas.read_csv(args.dataset, header=0)
     # drop rows without labels
-    df = df.dropna(subset = ['label_corrected'], inplace=False)
-    df = df.dropna(subset = ['XLNet_label'], inplace=False)
+    df = df.dropna(subset=['label_corrected'], inplace=False)
+    df = df.dropna(subset=['XLNet_label'], inplace=False)
 
-    arg_ids, arg_ids_inv, arg_structures = arg_to_dict(df)
+    arg_ids, arg_ids_inv, arg_structures = structure_arguments(df)
 
     graphs = []
     arg_ids = []
@@ -122,10 +121,9 @@ if __name__ == '__main__':
         graphs.append(graph)
         arg_ids.append(unique_id)
 
-    unique_graphs = check_isomorphism(graphs)
+    unique_graphs = group_into_isomorphic_families(graphs)
 
     # save graphs in png formt
     for i, family in enumerate(unique_graphs):
         n_samples = len(family)
-        show_graph(family[0], i, n_samples)
-        dict_repr = nx.to_dict_of_lists(family[0])
+        render_graph(family[0], i, n_samples)
