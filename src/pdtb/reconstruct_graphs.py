@@ -2,15 +2,13 @@
 
 import os
 from argparse import ArgumentParser
-from collections import defaultdict, Counter, OrderedDict
-import difflib
-from graphviz import Digraph
-import itertools
+from collections import defaultdict
+
 import matplotlib.pyplot as plt
+
 import networkx as nx
-from networkx.drawing.nx_agraph import graphviz_layout
 from networkx.algorithms.isomorphism import DiGraphMatcher
-import pickle
+from networkx.drawing.nx_agraph import graphviz_layout
 
 
 def get_file_paths(data_dir):
@@ -31,9 +29,9 @@ def split_data(data):
     return splitted_data
 
 
-def check_connections(Arg_seq):
+def check_connections(arg_sequence):
 
-    if (len(set(Arg_seq)) < len(Arg_seq)):
+    if (len(set(arg_sequence)) < len(arg_sequence)):
         return True
     else:
         return False
@@ -63,18 +61,21 @@ def get_arg_data(arg_type, record):
         span = record[32]
         text = record[34]
 
-        new_record = (rel_type, conn_span, conn_exp, conn_imlp1, conn_impl2,
-                      sem_class1_conn1, sem_class1_conn2, sem_class2_conn1, sem_class2_conn2,
+        new_record = (rel_type, conn_span, conn_exp,
+                      conn_imlp1, conn_impl2,
+                      sem_class1_conn1, sem_class1_conn2,
+                      sem_class2_conn1, sem_class2_conn2,
                       span, text)
 
         return new_record, text
 
 
 def assign_id(record, id_dict, id_dict_inv, dict_text, arg_id, id_text):
-    ''' 
-    Assign id to a text unit. 
+    '''
+    Assign id to a text unit.
     Arguments with the same span get the same id
     '''
+
     arg_types = ['Arg1', 'Arg2']
     span1 = record[22]  # column 23
     span2 = record[32]  # column 33
@@ -114,48 +115,48 @@ def assign_id(record, id_dict, id_dict_inv, dict_text, arg_id, id_text):
     return id_dict, id_dict_inv, arg_seq, dict_text, arg_id, id_text
 
 
-def get_Arg_structure(Arg_seqi, dict_inv):
+def get_arg_structure(arg_seqs, dict_inv):
 
     # Reconstruct an Argument
-    Arg_structure = defaultdict()
-    Arg_seq = iter(Arg_seqi)
+    arg_structure = defaultdict()
+    arg_seq = iter(arg_seqs)
 
-    for i, arg in enumerate(Arg_seq):
-        if arg not in Arg_structure.keys():
-            Arg_structure[arg] = [next(Arg_seq)]
+    for i, arg in enumerate(arg_seq):
+        if arg not in arg_structure.keys():
+            arg_structure[arg] = [next(Arg_seq)]
         else:
-            Arg_structure[arg].append(next(Arg_seq))
+            arg_structure[arg].append(next(Arg_seq))
 
     # Delete all relations except Explicit, Implicit and AltLex
-    for key in list(Arg_structure):
+    for key in list(arg_structure):
         new_values = []
-        for i, value in enumerate(Arg_structure[key]):
+        for i, value in enumerate(arg_structure[key]):
             rel_type = dict_inv[(key, value)][1][0]
             if (rel_type == 'Explicit' or
                     rel_type == 'Implicit' or
                     rel_type == 'AltLex'):
                 new_values.append(value)
-        Arg_structure[key] = new_values
-        if len(Arg_structure[key]) == 0:
-            del Arg_structure[key]
-    
+        arg_structure[key] = new_values
+        if len(arg_structure[key]) == 0:
+            del arg_structure[key]
+
     # Clean the Argument stucture
     # (Delete one-to-one links with no connections)
-    val_list = [y for x in Arg_structure.values() for y in x]
-    for key in list(Arg_structure):
+    val_list = [y for x in arg_structure.values() for y in x]
+    for key in list(arg_structure):
         if (key not in val_list and
-                len(set(Arg_structure[key]).intersection(set(Arg_structure.keys()))) == 0):
-            del Arg_structure[key]
+                len(set(arg_structure[key]).intersection(set(arg_structure.keys()))) == 0):
+            del arg_structure[key]
 
-    return Arg_structure
+    return arg_structure
 
 
-def separate_Arg(Arg_structure):
+def separate_Arg(arg_structure):
     '''
     Split an Argument dict since there can be several
     Args which are not connected to each other in one file
     '''
-    graph = nx.DiGraph(Arg_structure)
+    graph = nx.DiGraph(arg_structure)
     subtrees = []
     for nodes in nx.weakly_connected_components(graph):
         subgraph = graph.subgraph(nodes)
@@ -164,27 +165,26 @@ def separate_Arg(Arg_structure):
     return subtrees
 
 
-def to_graph(Arg_structure, dict_inv):
-
-    '''Transform to the graphical representation'''
+def to_graph(arg_structure, dict_inv):
+    '''Transform to graph representation'''
 
     edges = []
-    for key, values in Arg_structure.items():
+    for key, values in arg_structure.items():
         for value in values:
             rel_type = dict_inv[(key, value)][1][0]
             sem_rel = dict_inv[(key, value)][1][5]
             edges.append(
                 (key, value, {'sem_rel': sem_rel}))
 
-    G = nx.DiGraph()
-    G.add_edges_from(edges)
+    g = nx.DiGraph()
+    g.add_edges_from(edges)
 
-    return G
+    return g
 
 
 def check_isomorphism(Arg_list):
 
-    # Find unique argument structures 
+    # Find unique argument structures
     # checking graphs for isomorphism
     # TODO: check for isomorphism taking into account edges (rel, sem_rel)
 
@@ -210,13 +210,12 @@ def show_graph(G, num, n_samples):
     pos = graphviz_layout(G, prog='dot')
     nx.draw(G, pos, with_labels=True, font_weight='bold')
 
-
     # Display edge attributes: relation and semantic information
     #  (looks ugly)
-    #edge_rel_labels = nx.get_edge_attributes(G,'rel_type')
-    edge_sem_labels = nx.get_edge_attributes(G,'sem_rel')
-    #nx.draw_networkx_edge_labels(G, pos, labels = edge_rel_labels)
-    nx.draw_networkx_edge_labels(G, pos, labels = edge_sem_labels)
+    # edge_rel_labels = nx.get_edge_attributes(G,'rel_type')
+    edge_sem_labels = nx.get_edge_attributes(G, 'sem_rel')
+    # nx.draw_networkx_edge_labels(G, pos, labels = edge_rel_labels)
+    nx.draw_networkx_edge_labels(G, pos, labels=edge_sem_labels)
     plt.savefig('{}_{}_sampl.png'.format(num, n_samples), format='png')
     plt.close()
     plt.show()
@@ -263,7 +262,7 @@ if __name__ == '__main__':
         if check_connections(Arg_seq):
             counter += 1
             # Get Arguments
-            Arg_nested_seq = get_Arg_structure(Arg_seq, id_dict_inv)
+            Arg_nested_seq = get_arg_structure(Arg_seq, id_dict_inv)
             splitted_Args = separate_Arg(Arg_nested_seq)
             Arg_final += splitted_Args
 
@@ -286,8 +285,7 @@ if __name__ == '__main__':
             print(key, id_text[key])
             for value in values:
                 print(value, id_text[value])
-     
-    print("Overall number of Arguments is {}".format(len(Arg_final)))
 
+    print("Overall number of Arguments is {}".format(len(Arg_final)))
 
 
