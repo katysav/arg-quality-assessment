@@ -34,7 +34,7 @@ def structure_arguments(df):
     arg_structure = {}
 
     for index, record in df.iterrows():
-        arg_id, _, rel, arg1, arg2 = record
+        arg_id, _, rel, arg1, arg2, _ = record
         if arg_id not in arg_ids:
             arg_ids[arg_id] = {}
             arg_ids_inv[arg_id] = {}
