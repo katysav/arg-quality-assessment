@@ -21,9 +21,11 @@ import numpy as np
 
 def collate(samples):
     '''Batch the graphs and their labels'''
+
     graphs, labels = map(list, zip(*samples))
-    batched_graph = dgl.batch(graphs)
-    return batched_graph, torch.tensor(labels)
+    batched_graphs = dgl.batch(graphs)
+    labels = torch.tensor(labels) - 1  # correct indexing for loss function
+    return batched_graphs, torch.tensor(labels)
 
 
 def evaluate(model, features, labels):
@@ -39,7 +41,6 @@ def main(trainset):
     '''Train and evaluate the model'''
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    trainset = MiniGCDataset(200, 10, 20)
     dataloader = DataLoader(
         trainset,
         batch_size=10,
@@ -49,15 +50,15 @@ def main(trainset):
     running_loss = 0
     total_iters = len(dataloader)
 
-    model = GraphGATClassifier(1, 16, trainset.num_classes)
+    model = GraphGATClassifier(5, 30, 3)
     loss_func = nn.CrossEntropyLoss()
     opt = torch.optim.Adam(model.parameters())
 
     epoch_losses = []
     for epoch in range(args.epochs):
         epoch_loss = 0
-        for iter, (batched_graph, labels) in enumerate(dataloader):
-            logits = model(batched_graph)
+        for iter, (batched_graphs, labels) in enumerate(dataloader):
+            logits = model(batched_graphs)
             loss = loss_func(logits, labels)
             opt.zero_grad()
             loss.backward()
@@ -66,9 +67,8 @@ def main(trainset):
         epoch_loss /= (iter + 1)
         epoch_losses.append(epoch_loss)
 
-        acc = evaluate(model, batched_graph, labels)
-        print("Epoch {} | Loss {:.4f} | Accuracy {:.4f}".
-                format(epoch, epoch_loss, acc))
+        acc = evaluate(model, batched_graphs, labels)
+        print("Epoch {} | Loss {:.4f} | Accuracy {:.4f}".format(epoch, epoch_loss, acc))
 
     #acc = evaluate(model, features, labels, test_mask)
     #print("Test accuracy {:.2%}".format(acc))
@@ -112,12 +112,11 @@ if __name__ == '__main__':
     with open('graphs_scores_dict.pickle', 'rb') as file:
         dataset = pickle.load(file)
 
-    graphs_train = dataset['node_feature_matrix'][:100]
-
-    acc_train_lables = dataset['acceptability_scores'][:100]
+    graphs_train = dataset['dgl_graphs'][:100]
+    acc_lables_train = dataset['acceptability_scores'][:100]
 
     data = []
-    for graph, acc_label in zip(graphs_train, acc_train_lables):
+    for graph, acc_label in zip(graphs_train, acc_lables_train):
         data.append((graph, acc_label))
 
     main(data)
