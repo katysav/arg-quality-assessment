@@ -1,6 +1,8 @@
 
 from argparse import ArgumentParser
 
+from collections import Counter
+
 import dgl.data
 
 from tqdm import tqdm
@@ -9,10 +11,7 @@ import pickle
 
 import torch
 from torch import nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from dgl.data import MiniGCDataset
-from dgl import DGLGraph
 
 from model import GraphGATClassifier
 
@@ -37,7 +36,16 @@ def evaluate(model, graphs, labels):
         return correct.item() * 1.0 / len(labels)
 
 
-def main(trainset, testset):
+def calculate_class_weights(labels):
+    """Calculate weights for imbalanced classes
+    """
+    class_counts = sorted(Counter(labels).items())
+    num_items = [x[1] for x in class_counts]
+    weights = [min(num_items)/x for x in num_items]
+
+    return torch.tensor(weights)
+
+def main(trainset, class_weights, testset):
     """Train and evaluate the model"""
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,7 +57,7 @@ def main(trainset, testset):
         shuffle=True)
 
     model = GraphGATClassifier(5, 30, 3)
-    loss_func = nn.CrossEntropyLoss()
+    loss_func = nn.CrossEntropyLoss(weight=class_weights)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     epoch_losses = []
@@ -70,7 +78,7 @@ def main(trainset, testset):
         epoch_acc /= (iter + 1)
         epoch_losses.append(epoch_loss)
 
-        print("Epoch {} | Loss {:.4f} | Accuracy {:.4f}".format(epoch, epoch_loss, epoch_acc))
+        print("Epoch {} | Loss {:.4f} | Accuracy {:.4f}".format(epoch + 1, epoch_loss, epoch_acc))
 
     # Evaluation
     dataloader_test = DataLoader(
@@ -109,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument("--weight-decay", type=float, default=0.01,
                         help="weight decay")
     parser.add_argument("--quality_dim", choices=["rel", "suf", "acc", "cog"],
-                        default = "cog",
+                        default="cog",
                         help="Argument qulity dimension to evaluate: \
                         relevance, sufficiency, acceptability, cogency.")
     args = parser.parse_args()
@@ -140,4 +148,6 @@ if __name__ == "__main__":
     for graph, label in zip(graphs_test, labels_test):
         testset.append((graph, label))
 
-    main(trainset, testset)
+    class_weights = calculate_class_weights(labels_train)
+
+    main(trainset, class_weights, testset)
