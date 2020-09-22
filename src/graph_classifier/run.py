@@ -20,7 +20,7 @@ import numpy as np
 
 
 def collate(samples):
-    '''Batch the graphs and their labels'''
+    """Batch the graphs and their labels"""
 
     graphs, labels = map(list, zip(*samples))
     batched_graphs = dgl.batch(graphs)
@@ -38,7 +38,7 @@ def evaluate(model, graphs, labels):
 
 
 def main(trainset, testset):
-    '''Train and evaluate the model'''
+    """Train and evaluate the model"""
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dataloader_train = DataLoader(
@@ -50,7 +50,7 @@ def main(trainset, testset):
 
     model = GraphGATClassifier(5, 30, 3)
     loss_func = nn.CrossEntropyLoss()
-    opt = torch.optim.Adam(model.parameters(), lr=0.001)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     epoch_losses = []
     for epoch in range(args.epochs):
@@ -88,13 +88,13 @@ def main(trainset, testset):
     print("Test accuracy {:.2%}".format(test_acc))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
    
     parser = ArgumentParser(
-        description='Main script')
+        description="Main script")
     parser.add_argument("--gpu", type=int, default=-1,
                         help="which GPU to use. Set -1 to use CPU.")
-    parser.add_argument("--epochs", type=int, default=10,
+    parser.add_argument("--epochs", type=int, default=100,
                         help="number of training epochs")
     parser.add_argument("--num-heads", type=int, default=8,
                         help="number of hidden attention heads")
@@ -104,39 +104,40 @@ if __name__ == '__main__':
                         help="number of hidden layers")
     parser.add_argument("--num-hidden", type=int, default=8,
                         help="number of hidden units")
-    parser.add_argument("--residual", action="store_true", default=False,
-                        help="use residual connection")
-    parser.add_argument("--in-drop", type=float, default=.6,
-                        help="input feature dropout")
-    parser.add_argument("--attn-drop", type=float, default=.6,
-                        help="attention dropout")
     parser.add_argument("--lr", type=float, default=0.005,
                         help="learning rate")
-    parser.add_argument('--weight-decay', type=float, default=5e-4,
+    parser.add_argument("--weight-decay", type=float, default=0.01,
                         help="weight decay")
-    parser.add_argument('--negative-slope', type=float, default=0.2,
-                        help="the negative slope of leaky relu")
-    parser.add_argument('--early-stop', action='store_true', default=False,
-                        help="indicates whether to use early stop or not")
-    args = parser.parse_args()
+    parser.add_argument("--quality_dim", choices=["rel", "suf", "acc", "cog"],
+                        default = "cog",
+                        help="Argument qulity dimension to evaluate: \
+                        relevance, sufficiency, acceptability, cogency.")
     args = parser.parse_args()
 
-    with open('graphs_scores_dict.pickle', 'rb') as file:
+    with open("graphs_scores_dict.pickle", "rb") as file:
         dataset = pickle.load(file)
 
-    graphs_train = dataset['dgl_graphs'][:250]
-    acc_lables_train = dataset['acceptability_scores'][:250]
-    graphs_test = dataset['dgl_graphs'][250:]
-    acc_lables_test = dataset['acceptability_scores'][250:]
-
+    graphs_train = dataset["dgl_graphs"][:250]
+    graphs_test = dataset["dgl_graphs"][250:]
+    if args.quality_dim == "rel":
+        labels_train = dataset["relevance_scores"][:250]
+        labels_test = dataset["relevance_scores"][250:]
+    elif args.quality_dim == "suf":
+        labels_train = dataset["sufficiency_scores"][:250]
+        labels_test = dataset["sufficiency_scores"][250:]
+    elif args.quality_dim == "acc":
+        labels_train = dataset["acceptability_scores"][:250]
+        labels_test = dataset["acceptability_scores"][250:]
+    elif args.quality_dim == "cog":
+        labels_train = dataset["cogency"][:250]
+        labels_test = dataset["cogency"][250:]
 
     trainset = []
-    for graph, acc_label in zip(graphs_train, acc_lables_train):
-        trainset.append((graph, acc_label))
+    for graph, label in zip(graphs_train, labels_train):
+        trainset.append((graph, label))
 
     testset = []
-    for graph, acc_label in zip(graphs_test, acc_lables_test):
-        testset.append((graph, acc_label))
-
+    for graph, label in zip(graphs_test, labels_test):
+        testset.append((graph, label))
 
     main(trainset, testset)
