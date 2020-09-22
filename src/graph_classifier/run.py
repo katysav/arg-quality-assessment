@@ -28,50 +28,64 @@ def collate(samples):
     return batched_graphs, torch.tensor(labels)
 
 
-def evaluate(model, features, labels):
+def evaluate(model, graphs, labels):
     model.eval()
     with torch.no_grad():
-        logits = model(features)
+        logits = model(graphs)
         _, indices = torch.max(logits, dim=1)
         correct = torch.sum(indices == labels)
         return correct.item() * 1.0 / len(labels)
 
 
-def main(trainset):
+def main(trainset, testset):
     '''Train and evaluate the model'''
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dataloader = DataLoader(
+    dataloader_train = DataLoader(
         trainset,
         batch_size=10,
         collate_fn=collate,
         drop_last=False,
         shuffle=True)
-    running_loss = 0
-    total_iters = len(dataloader)
 
     model = GraphGATClassifier(5, 30, 3)
     loss_func = nn.CrossEntropyLoss()
-    opt = torch.optim.Adam(model.parameters())
+    opt = torch.optim.Adam(model.parameters(), lr=0.001)
 
     epoch_losses = []
     for epoch in range(args.epochs):
         epoch_loss = 0
-        for iter, (batched_graphs, labels) in enumerate(dataloader):
+        epoch_acc = 0
+        for iter, (batched_graphs, labels) in enumerate(dataloader_train):
             logits = model(batched_graphs)
             loss = loss_func(logits, labels)
             opt.zero_grad()
             loss.backward()
             opt.step()
             epoch_loss += loss.detach().item()
+            acc = evaluate(model, batched_graphs, labels)
+            epoch_acc += acc
+
         epoch_loss /= (iter + 1)
+        epoch_acc /= (iter + 1)
         epoch_losses.append(epoch_loss)
 
-        acc = evaluate(model, batched_graphs, labels)
-        print("Epoch {} | Loss {:.4f} | Accuracy {:.4f}".format(epoch, epoch_loss, acc))
+        print("Epoch {} | Loss {:.4f} | Accuracy {:.4f}".format(epoch, epoch_loss, epoch_acc))
 
-    #acc = evaluate(model, features, labels, test_mask)
-    #print("Test accuracy {:.2%}".format(acc))
+    # Evaluation
+    dataloader_test = DataLoader(
+        testset,
+        batch_size=10,
+        collate_fn=collate,
+        drop_last=False,
+        shuffle=True)
+
+    test_acc = 0
+    for iter, (batched_graphs, labels) in enumerate(dataloader_test):
+        acc = evaluate(model, batched_graphs, labels)
+        test_acc += acc
+    test_acc /= (iter + 1)
+    print("Test accuracy {:.2%}".format(test_acc))
 
 
 if __name__ == '__main__':
@@ -104,19 +118,25 @@ if __name__ == '__main__':
                         help="the negative slope of leaky relu")
     parser.add_argument('--early-stop', action='store_true', default=False,
                         help="indicates whether to use early stop or not")
-    parser.add_argument('--fastmode', action="store_true", default=False,
-                        help="skip re-evaluate the validation set")
     args = parser.parse_args()
     args = parser.parse_args()
 
     with open('graphs_scores_dict.pickle', 'rb') as file:
         dataset = pickle.load(file)
 
-    graphs_train = dataset['dgl_graphs'][:100]
-    acc_lables_train = dataset['acceptability_scores'][:100]
+    graphs_train = dataset['dgl_graphs'][:250]
+    acc_lables_train = dataset['acceptability_scores'][:250]
+    graphs_test = dataset['dgl_graphs'][250:]
+    acc_lables_test = dataset['acceptability_scores'][250:]
 
-    data = []
+
+    trainset = []
     for graph, acc_label in zip(graphs_train, acc_lables_train):
-        data.append((graph, acc_label))
+        trainset.append((graph, acc_label))
 
-    main(data)
+    testset = []
+    for graph, acc_label in zip(graphs_test, acc_lables_test):
+        testset.append((graph, acc_label))
+
+
+    main(trainset, testset)
