@@ -26,8 +26,6 @@ class GraphGATClassifier(nn.Module):
         h = F.elu(self.layer2(g, h)).flatten(1)
         with g.local_scope():
             g.ndata['h'] = h
-            print(h)
-            print(h.shape)
             # Calculate graph representation by average readout.
             hg = dgl.mean_nodes(g, 'h')
         return self.classify(hg)
