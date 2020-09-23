@@ -4,9 +4,13 @@ from argparse import ArgumentParser
 
 import dgl
 
+import numpy as np
+
 import pickle
 
 import pandas
+
+from sentence_transformers import SentenceTransformer
 
 import torch
 
@@ -68,7 +72,39 @@ def encode_relations(graph_structures):
     return rel_enc
 
 
-def graph_to_dgl(graph_structures, enc_rel):
+def embed_nodes_glove(nodes_dict, id_text, emb_idx):
+    """Use Glove embeddings as node features"""
+
+    graph_feat = torch.zeros((len(nodes_dict), 300))
+    # TODO: feature assignment using embeddings
+    for k, v in nodes_dict.items():
+        node_text = id_text[v]
+        words = node_text.split()
+        vs = []
+        for word in words:
+            v = emb_idx[word]
+            vs.append[v]
+        vs = np.vstack(vs)
+        vs_sent = np.average(vs, axis=1)
+        graph_feat[[v]] = torch.from_numpy(vs_sent)
+
+    return graph_feat
+
+
+def embed_nodes_bert(nodes_dict, id_text):
+    """Use Sentence BERT embeddings as node features"""
+
+    model = SentenceTransformer(model_name)
+    graph_feat = torch.zeros((len(nodes_dict), 512))
+    for k, v in nodes_dict.items():
+        node_text = id_text[v]
+        sent_emb = model.encode(node_text)
+        graph_feat[[v]] = torch.from_numpy(sent_emb)
+
+    return graph_feat
+
+
+def graph_to_dgl(graph_structures, enc_rel, node_feat='rand'):
     """Create dgl graphs from dictionary,
     add edge and node features
     """
@@ -114,6 +150,9 @@ if __name__ == '__main__':
         'graphs', help='Pickled graphs')
     parser.add_argument(
         'dataset', help='Dataset containing quality scores')
+    parser.add_argument(
+        '--node-feat-type', choices=['rand', 'glove', 'bert'],
+        default='rand', help='Node feature type')
     args = parser.parse_args()
 
     with open(args.graphs, 'rb') as fd:
@@ -121,6 +160,7 @@ if __name__ == '__main__':
 
     df = pandas.read_csv(args.dataset)
     graph_scores = store_graphs(df, graph_structures[2])
+    idx_text = graph_structures[0]  # dictionaty with nodes id and corresponding text
     max_nodes = get_max_len(graph_scores['graphs'])
     enc_rel = encode_relations(graph_scores['graphs'])
     dgl_graphs = graph_to_dgl(graph_scores['graphs'], enc_rel)
@@ -134,5 +174,5 @@ if __name__ == '__main__':
     graph_data['cogency'] = graph_scores['cogency']
 
     # Store the graphs and labels to .pkl
-    with open('graphs_scores_dict.pickle', 'wb') as file:
-        pickle.dump(graph_data, file, protocol=pickle.HIGHEST_PROTOCOL)
+    #with open('graphs_scores_dict.pickle', 'wb') as file:
+    #    pickle.dump(graph_data, file, protocol=pickle.HIGHEST_PROTOCOL)
