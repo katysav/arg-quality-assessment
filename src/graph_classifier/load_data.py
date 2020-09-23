@@ -169,14 +169,18 @@ if __name__ == '__main__':
 
     df = pandas.read_csv(args.dataset)
     graph_scores = store_graphs(df, graph_structures[2])
-    idx_text = graph_structures[0]  # dictionaty with nodes id and corresponding text
+    idx_text = graph_structures[0]  # dictionary with nodes id and corresponding text
     max_nodes = get_max_len(graph_scores['graphs'])
     enc_rel = encode_relations(graph_scores['graphs'])
-    dgl_graphs = graph_to_dgl(graph_scores['graphs'], enc_rel)
+    dgl_graphs_rand = graph_to_dgl(graph_scores['graphs'], enc_rel)
+    dgl_graphs_glove = graph_to_dgl(graph_scores['graphs'], enc_rel, node_feat='glove')
+    dgl_graphs_bert = graph_to_dgl(graph_scores['graphs'], enc_rel, node_feat='bert')
 
     graph_data = {}
 
-    graph_data['dgl_graphs'] = dgl_graphs
+    graph_data['dgl_graphs_rand'] = dgl_graphs_rand
+    graph_data['dgl_graphs_glove'] = dgl_graphs_glove
+    graph_data['dgl_graphs_bert'] = dgl_graphs_bert
     graph_data['acceptability_scores'] = graph_scores['acceptability_scores']
     graph_data['relevance_scores'] = graph_scores['relevance_scores']
     graph_data['sufficiency_scores'] = graph_scores['sufficiency_scores']
