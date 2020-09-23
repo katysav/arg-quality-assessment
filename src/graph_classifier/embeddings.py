@@ -59,7 +59,6 @@ def embed_glove(id_texts, emb_glove):
             for word in words:
                 if word in emb_glove:
                     v = emb_glove[word]
-                    print(v)
                 else:
                     v = np.zeros((300, ), dtype="float32")
                 vs.append(v)
@@ -89,7 +88,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "dataset", help="Dataset with sentences to encode")
     parser.add_argument(
-        "--glove", default="data/glove.pkl",
+        "--glove", default="data/glove.pickle",
         help="Path to the file with .pkl glove embeddings")
     args = parser.parse_args()
 
