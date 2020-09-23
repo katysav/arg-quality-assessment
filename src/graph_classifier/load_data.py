@@ -72,34 +72,24 @@ def encode_relations(graph_structures):
     return rel_enc
 
 
-def embed_nodes_glove(nodes_dict, id_text, emb_idx):
+def use_glove_features(nodes_dict, id_text):
     """Use Glove embeddings as node features"""
 
     graph_feat = torch.zeros((len(nodes_dict), 300))
-    # TODO: feature assignment using embeddings
     for k, v in nodes_dict.items():
-        node_text = id_text[v]
-        words = node_text.split()
-        vs = []
-        for word in words:
-            v = emb_idx[word]
-            vs.append[v]
-        vs = np.vstack(vs)
-        vs_sent = np.average(vs, axis=1)
-        graph_feat[[v]] = torch.from_numpy(vs_sent)
+        node_emb = id_text[k]
+        graph_feat[[v]] = torch.from_numpy(node_emb)
 
     return graph_feat
 
 
-def embed_nodes_bert(nodes_dict, id_text):
+def use_bert_features(nodes_dict, id_text):
     """Use Sentence BERT embeddings as node features"""
 
-    model = SentenceTransformer(model_name)
-    graph_feat = torch.zeros((len(nodes_dict), 512))
+    graph_feat = torch.zeros((len(nodes_dict), 768))
     for k, v in nodes_dict.items():
-        node_text = id_text[v]
-        sent_emb = model.encode(node_text)
-        graph_feat[[v]] = torch.from_numpy(sent_emb)
+        node_emb = id_text[k]
+        graph_feat[[v]] = torch.from_numpy(node_emb)
 
     return graph_feat
 
@@ -125,11 +115,22 @@ def graph_to_dgl(graph_structures, enc_rel, node_feat='rand'):
                 counter += 1
             edges.append((local_dict[id_1], local_dict[id_2], el[2]['rel']))
         G.add_nodes(len(local_dict))
-        G.ndata['x'] = torch.zeros((len(local_dict), 5))
-        # TODO: feature assignment using embeddings
-        for k, v in local_dict.items():
-            G.nodes[[v]].data['x'] = torch.rand(1, 5)
-
+        # Use different feature types
+        if node_feat == 'rand':
+            G.ndata['x'] = torch.zeros((len(local_dict), 5))
+            # TODO: feature assignment using embeddings
+            for k, v in local_dict.items():
+                G.nodes[[v]].data['x'] = torch.rand(1, 5)
+        elif node_feat == 'glove':
+            with open(args.glove_emb, "rb") as f:
+                glove_vectors = pickle.load(f)
+            feat = use_glove_features(local_dict, glove_vectors)
+            G.ndata['x'] = feat
+        elif node_feat == 'bert':
+            with open(args.bert_emb, "rb") as f:
+                bert_vectors = pickle.load(f)
+            feat = use_bert_features(local_dict, bert_vectors)
+            G.ndata['x'] = feat
         # Add edges
         for i, edge in enumerate(edges):
             G.add_edge(edge[0], edge[1])
@@ -147,12 +148,20 @@ if __name__ == '__main__':
     parser = ArgumentParser(
         description='Main ODQA script')
     parser.add_argument(
-        'graphs', help='Pickled graphs')
+        '--graphs', default='data/graphs.pickle',
+        help='Pickled graphs')
     parser.add_argument(
-        'dataset', help='Dataset containing quality scores')
+        '--dataset', default='data/dg_scores.csv',
+        help='Dataset containing quality scores')
     parser.add_argument(
         '--node-feat-type', choices=['rand', 'glove', 'bert'],
         default='rand', help='Node feature type')
+    parser.add_argument(
+        '--glove_emb', default='data/nodes_glove.pickle',
+        help='Path to the file with nodes encoded with GloVe embeddings')
+    parser.add_argument(
+        '--bert_emb', default='data/nodes_bert.pickle',
+        help='Path to the file with nodes encoded with BERT embeddings')
     args = parser.parse_args()
 
     with open(args.graphs, 'rb') as fd:
@@ -174,5 +183,5 @@ if __name__ == '__main__':
     graph_data['cogency'] = graph_scores['cogency']
 
     # Store the graphs and labels to .pkl
-    #with open('graphs_scores_dict.pickle', 'wb') as file:
-    #    pickle.dump(graph_data, file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open('graphs_scores_dict.pickle', 'wb') as file:
+        pickle.dump(graph_data, file, protocol=pickle.HIGHEST_PROTOCOL)
