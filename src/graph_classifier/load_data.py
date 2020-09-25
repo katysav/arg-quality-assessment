@@ -27,14 +27,14 @@ def store_graphs(df, graph_structures):
 
     for index, row in df.iterrows():
         arg_id = row['arg_id']
-        acceptability.append(row['LocalAcceptability'])
-        relevance.append(row['LocalRelevance'])
-        sufficiency.append(row['LocalSufficiency'])
-        cogency.append(row['Cogency'])
         if arg_id in graph_structures:
             ids.append(arg_id)
             graph = graph_structures[arg_id]
             graphs.append(graph)
+            acceptability.append(row['LocalAcceptability'])
+            relevance.append(row['LocalRelevance'])
+            sufficiency.append(row['LocalSufficiency'])
+            cogency.append(row['Cogency'])
 
     graph_scores['arg_ids'] = ids
     graph_scores['graphs'] = graphs
@@ -120,7 +120,7 @@ def graph_to_dgl(graph_structures, enc_rel, node_feat='rand'):
             G.ndata['x'] = torch.zeros((len(local_dict), 5))
             # TODO: feature assignment using embeddings
             for k, v in local_dict.items():
-                G.nodes[[v]].data['x'] = torch.rand(1, 5)
+                G.nodes[[v]].data['x'] = torch.ones(1, 5)
         elif node_feat == 'glove':
             with open(args.glove_emb, "rb") as f:
                 glove_vectors = pickle.load(f)
@@ -168,6 +168,7 @@ if __name__ == '__main__':
         graph_structures = pickle.load(fd)
 
     df = pandas.read_csv(args.dataset)
+
     graph_scores = store_graphs(df, graph_structures[2])
     idx_text = graph_structures[0]  # dictionary with nodes id and corresponding text
     max_nodes = get_max_len(graph_scores['graphs'])
@@ -187,5 +188,5 @@ if __name__ == '__main__':
     graph_data['cogency'] = graph_scores['cogency']
 
     # Store the graphs and labels to .pkl
-    with open('graphs_scores_dict.pickle', 'wb') as file:
+    with open('data/graphs_scores_dict.pickle', 'wb') as file:
         pickle.dump(graph_data, file, protocol=pickle.HIGHEST_PROTOCOL)
