@@ -17,6 +17,9 @@ from model import GraphGATClassifier
 
 import numpy as np
 
+import wandb
+wandb.init(project="arg-qual")
+
 
 def collate(samples):
     """Batch the graphs and their labels"""
@@ -27,7 +30,7 @@ def collate(samples):
     return batched_graphs, torch.tensor(labels)
 
 
-def evaluate(model, graphs, labels):
+def compute_acc(model, graphs, labels):
     model.eval()
     with torch.no_grad():
         logits = model(graphs)
@@ -45,10 +48,13 @@ def calculate_class_weights(labels):
 
     return torch.tensor(weights)
 
-def main(trainset, class_weights, testset):
+
+def main(train, val, test, class_weights):
+
     """Train and evaluate the model"""
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     dataloader_train = DataLoader(
         trainset,
         batch_size=10,
@@ -56,12 +62,21 @@ def main(trainset, class_weights, testset):
         drop_last=False,
         shuffle=True)
 
-    model = GraphGATClassifier(5, 30, 3)
+    dataloader_val = DataLoader(
+            valset,
+            batch_size=10,
+            collate_fn=collate,
+            drop_last=False,
+            shuffle=True)
+
+    in_dim = trainset[0][0].ndata['x'].shape[1]  # define feature dim
+    model = GraphGATClassifier(in_dim, 10, 2)
     loss_func = nn.CrossEntropyLoss(weight=class_weights)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     epoch_losses = []
     for epoch in range(args.epochs):
+        model.train()
         epoch_loss = 0
         epoch_acc = 0
         for iter, (batched_graphs, labels) in enumerate(dataloader_train):
@@ -71,7 +86,7 @@ def main(trainset, class_weights, testset):
             loss.backward()
             opt.step()
             epoch_loss += loss.detach().item()
-            acc = evaluate(model, batched_graphs, labels)
+            acc = compute_acc(model, batched_graphs, labels)
             epoch_acc += acc
 
         epoch_loss /= (iter + 1)
@@ -79,6 +94,16 @@ def main(trainset, class_weights, testset):
         epoch_losses.append(epoch_loss)
 
         print("Epoch {} | Loss {:.4f} | Accuracy {:.4f}".format(epoch + 1, epoch_loss, epoch_acc))
+        wandb.log({'loss': epoch_loss})
+
+        # Evaluate during training
+        val_acc = 0
+        for iter, (batched_graphs, labels) in enumerate(dataloader_val):
+            acc = compute_acc(model, batched_graphs, labels)
+            val_acc += acc
+        val_acc /= (iter + 1)
+        print("Validation accuracy {:.2%} at epoch {}".format(val_acc, epoch))
+        wandb.log({'val_acc': val_acc})
 
     # Evaluation
     dataloader_test = DataLoader(
@@ -90,7 +115,7 @@ def main(trainset, class_weights, testset):
 
     test_acc = 0
     for iter, (batched_graphs, labels) in enumerate(dataloader_test):
-        acc = evaluate(model, batched_graphs, labels)
+        acc = compute_acc(model, batched_graphs, labels)
         test_acc += acc
     test_acc /= (iter + 1)
     print("Test accuracy {:.2%}".format(test_acc))
@@ -102,7 +127,7 @@ if __name__ == "__main__":
         description="Main script")
     parser.add_argument("--gpu", type=int, default=-1,
                         help="which GPU to use. Set -1 to use CPU.")
-    parser.add_argument("--epochs", type=int, default=100,
+    parser.add_argument("--epochs", type=int, default=80,
                         help="number of training epochs")
     parser.add_argument("--num-heads", type=int, default=8,
                         help="number of hidden attention heads")
@@ -112,7 +137,7 @@ if __name__ == "__main__":
                         help="number of hidden layers")
     parser.add_argument("--num-hidden", type=int, default=8,
                         help="number of hidden units")
-    parser.add_argument("--lr", type=float, default=0.005,
+    parser.add_argument("--lr", type=float, default=0.0001,
                         help="learning rate")
     parser.add_argument("--weight-decay", type=float, default=0.01,
                         help="weight decay")
@@ -120,29 +145,69 @@ if __name__ == "__main__":
                         default="cog",
                         help="Argument qulity dimension to evaluate: \
                         relevance, sufficiency, acceptability, cogency.")
+    parser.add_argument("--node_feat", choices=["rand", "glove", "bert"],
+                        default="rand",
+                        help="Graph node features: random vectors, Glove embeddings, \
+                        BERT sentence embeddings")
     args = parser.parse_args()
 
-    with open("graphs_scores_dict.pickle", "rb") as file:
+    with open("data/graphs_scores_dict.pickle", "rb") as file:
         dataset = pickle.load(file)
 
-    graphs_train = dataset["dgl_graphs"][:250]
-    graphs_test = dataset["dgl_graphs"][250:]
+
+    # Select features nodes
+    if args.node_feat == "rand":
+        graphs = dataset["dgl_graphs_rand"]
+        graphs_train = dataset["dgl_graphs_rand"][:242]
+        graphs_val = dataset["dgl_graphs_rand"][242:272]
+        graphs_test = dataset["dgl_graphs_rand"][272:]
+    elif args.node_feat == "glove":
+        graphs_train = dataset["dgl_graphs_glove"][:242]
+        graphs_val = dataset["dgl_graphs_glove"][242:272]
+        graphs_test = dataset["dgl_graphs_glove"][272:]
+    elif args.node_feat == "bert":
+        graphs_train = dataset["dgl_graphs_bert"][:242]
+        graphs_val = dataset["dgl_graphs_bert"][250:272]
+        graphs_test = dataset["dgl_graphs_bert"][272:]
+
+    # Select quality dimension to evaluate
     if args.quality_dim == "rel":
-        labels_train = dataset["relevance_scores"][:250]
-        labels_test = dataset["relevance_scores"][250:]
+        for i, l in enumerate(dataset["relevance_scores"]):
+            if l == 3:
+                dataset["relevance_scores"][i] = 2
+        labels_train = dataset["relevance_scores"][:242]
+        labels_val = dataset["relevance_scores"][242:272]
+        labels_test = dataset["relevance_scores"][272:]
     elif args.quality_dim == "suf":
-        labels_train = dataset["sufficiency_scores"][:250]
-        labels_test = dataset["sufficiency_scores"][250:]
+        for i, l in enumerate(dataset["sufficiency_scores"]):
+            if l == 3:
+                dataset["sufficiency_scores"][i] = 2
+        labels_train = dataset["sufficiency_scores"][:242]
+        labels_val = dataset["sufficiency_scores"][242:272]
+        labels_test = dataset["sufficiency_scores"][272:]
     elif args.quality_dim == "acc":
-        labels_train = dataset["acceptability_scores"][:250]
-        labels_test = dataset["acceptability_scores"][250:]
+        for i, l in enumerate(dataset["acceptability_scores"]):
+            if l == 3:
+                dataset["acceptability_scores"][i] = 2
+        print(Counter(dataset["acceptability_scores"]))
+        labels_train = dataset["acceptability_scores"][:242]
+        labels_val = dataset["acceptability_scores"][242:272]
+        labels_test = dataset["acceptability_scores"][272:]
     elif args.quality_dim == "cog":
-        labels_train = dataset["cogency"][:250]
-        labels_test = dataset["cogency"][250:]
+        for i, l in enumerate(dataset["cogency"]):
+            if l == 3:
+                dataset["cogency"][i] = 2
+        labels_train = dataset["cogency"][:242]
+        labels_val = dataset["cogency"][242:272]
+        labels_test = dataset["cogency"][272:]
 
     trainset = []
     for graph, label in zip(graphs_train, labels_train):
         trainset.append((graph, label))
+
+    valset = []
+    for graph, label in zip(graphs_val, labels_val):
+        valset.append((graph, label))
 
     testset = []
     for graph, label in zip(graphs_test, labels_test):
@@ -150,4 +215,4 @@ if __name__ == "__main__":
 
     class_weights = calculate_class_weights(labels_train)
 
-    main(trainset, class_weights, testset)
+    main(trainset, valset, testset, class_weights)
