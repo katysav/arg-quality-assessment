@@ -9,6 +9,8 @@ from tqdm import tqdm
 
 import pickle
 
+import random
+
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -28,6 +30,12 @@ def collate(samples):
     batched_graphs = dgl.batch(graphs)
     labels = torch.tensor(labels) - 1  # correct indexing for loss function
     return batched_graphs, torch.tensor(labels)
+
+
+def set_seed(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
 
 
 def compute_acc(model, graphs, labels):
@@ -74,6 +82,8 @@ def main(train, val, test, class_weights):
     loss_func = nn.CrossEntropyLoss(weight=class_weights)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    set_seed(args)
+
     epoch_losses = []
     for epoch in range(args.epochs):
         model.train()
@@ -119,6 +129,7 @@ def main(train, val, test, class_weights):
         test_acc += acc
     test_acc /= (iter + 1)
     print("Test accuracy {:.2%}".format(test_acc))
+    wandb.log({'test_acc': test_acc})
 
 
 if __name__ == "__main__":
@@ -129,6 +140,8 @@ if __name__ == "__main__":
                         help="which GPU to use. Set -1 to use CPU.")
     parser.add_argument("--epochs", type=int, default=80,
                         help="number of training epochs")
+    parser.add_argument("--seed", type=int, default=42, 
+                        help="random seed for initialization")
     parser.add_argument("--num-heads", type=int, default=8,
                         help="number of hidden attention heads")
     parser.add_argument("--num-out-heads", type=int, default=1,
