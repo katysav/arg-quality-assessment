@@ -1,26 +1,18 @@
-
 from argparse import ArgumentParser
-
 from collections import Counter
-
-import dgl.data
-
-from tqdm import tqdm
-
 import pickle
-
 import random
 
+import dgl.data
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+import numpy as np
+import wandb
 
 from model import GraphGATClassifier
-
-import numpy as np
-
-import wandb
-wandb.init(project="arg-qual")
 
 
 def collate(samples):
@@ -57,9 +49,35 @@ def calculate_class_weights(labels):
     return torch.tensor(weights)
 
 
+def handle_imbalance(dataset, minority_class):
+    """Delete the minority class, assign its
+    label to the nearest majority class
+    """
+    for i, l in enumerate(dataset):
+            if l == minority_class:
+                dataset[i] = 2
+    return dataset
+
+
+def split_sets(dataset_x, dataset_y, random_state):
+
+    # Divide into train and test sets: 0.8/0.2
+    X_train, X_test, y_train, y_test = train_test_split(
+        dataset_x, dataset_y, test_size=0.2, random_state=random_state)
+    # Divide the test set into validation and test 0.1/0.1
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_test, y_test, test_size=0.5, random_state=random_state)
+
+
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+
 def main(train, val, test, class_weights):
 
     """Train and evaluate the model"""
+
+    wandb.init(project="arg-qual", tags=[args.node_feat, args.quality_dim, str(args.epochs), str(args.lr), "val=test"])
+
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -133,7 +151,7 @@ def main(train, val, test, class_weights):
 
 
 if __name__ == "__main__":
-   
+
     parser = ArgumentParser(
         description="Main script")
     parser.add_argument("--gpu", type=int, default=-1,
@@ -167,52 +185,30 @@ if __name__ == "__main__":
     with open("data/graphs_scores_dict.pickle", "rb") as file:
         dataset = pickle.load(file)
 
+    # Select quality dimension to evaluate
+    if args.quality_dim == "rel":
+        labels = handle_imbalance(dataset["relevance_scores"], 1)
+        for i, n in enumerate(labels):  # needed to fix an index error
+            if n == 2:
+                labels[i] = 1
+            elif n == 3:
+                labels[i] = 2
+    elif args.quality_dim == "suf":
+        labels = handle_imbalance(dataset["sufficiency_scores"], 3)
+    elif args.quality_dim == "acc":
+        labels = handle_imbalance(dataset["acceptability_scores"], 3)
+    elif args.quality_dim == "cog":
+        labels = handle_imbalance(dataset["cogency"], 3)
+
 
     # Select features nodes
     if args.node_feat == "rand":
-        graphs = dataset["dgl_graphs_rand"]
-        graphs_train = dataset["dgl_graphs_rand"][:242]
-        graphs_val = dataset["dgl_graphs_rand"][242:272]
-        graphs_test = dataset["dgl_graphs_rand"][272:]
+        graphs_train, graphs_val, graphs_test, labels_train, labels_val, labels_test = split_sets(dataset["dgl_graphs_rand"], labels, 1)
     elif args.node_feat == "glove":
-        graphs_train = dataset["dgl_graphs_glove"][:242]
-        graphs_val = dataset["dgl_graphs_glove"][242:272]
-        graphs_test = dataset["dgl_graphs_glove"][272:]
+        graphs_train, graphs_val, graphs_test, labels_train, labels_val, labels_test = split_sets(dataset["dgl_graphs_glove"], labels, 1)
     elif args.node_feat == "bert":
-        graphs_train = dataset["dgl_graphs_bert"][:242]
-        graphs_val = dataset["dgl_graphs_bert"][250:272]
-        graphs_test = dataset["dgl_graphs_bert"][272:]
+        graphs_train, graphs_val, graphs_test, labels_train, labels_val, labels_test = split_sets(dataset["dgl_graphs_bert"], labels, 1)
 
-    # Select quality dimension to evaluate
-    if args.quality_dim == "rel":
-        for i, l in enumerate(dataset["relevance_scores"]):
-            if l == 3:
-                dataset["relevance_scores"][i] = 2
-        labels_train = dataset["relevance_scores"][:242]
-        labels_val = dataset["relevance_scores"][242:272]
-        labels_test = dataset["relevance_scores"][272:]
-    elif args.quality_dim == "suf":
-        for i, l in enumerate(dataset["sufficiency_scores"]):
-            if l == 3:
-                dataset["sufficiency_scores"][i] = 2
-        labels_train = dataset["sufficiency_scores"][:242]
-        labels_val = dataset["sufficiency_scores"][242:272]
-        labels_test = dataset["sufficiency_scores"][272:]
-    elif args.quality_dim == "acc":
-        for i, l in enumerate(dataset["acceptability_scores"]):
-            if l == 3:
-                dataset["acceptability_scores"][i] = 2
-        print(Counter(dataset["acceptability_scores"]))
-        labels_train = dataset["acceptability_scores"][:242]
-        labels_val = dataset["acceptability_scores"][242:272]
-        labels_test = dataset["acceptability_scores"][272:]
-    elif args.quality_dim == "cog":
-        for i, l in enumerate(dataset["cogency"]):
-            if l == 3:
-                dataset["cogency"][i] = 2
-        labels_train = dataset["cogency"][:242]
-        labels_val = dataset["cogency"][242:272]
-        labels_test = dataset["cogency"][272:]
 
     trainset = []
     for graph, label in zip(graphs_train, labels_train):
@@ -228,4 +224,4 @@ if __name__ == "__main__":
 
     class_weights = calculate_class_weights(labels_train)
 
-    main(trainset, valset, testset, class_weights)
+    main(trainset, testset, testset, class_weights)
