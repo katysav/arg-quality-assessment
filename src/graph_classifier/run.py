@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from collections import Counter
+import operator
 import pickle
 import random
 
@@ -63,21 +64,32 @@ def split_sets(dataset_x, dataset_y, random_state):
 
     # Divide into train and test sets: 0.8/0.2
     X_train, X_test, y_train, y_test = train_test_split(
-        dataset_x, dataset_y, test_size=0.2, random_state=random_state)
+        dataset_x, dataset_y, test_size=0.2, stratify=dataset_y, random_state=random_state)
     # Divide the test set into validation and test 0.1/0.1
     X_val, X_test, y_val, y_test = train_test_split(
         X_test, y_test, test_size=0.5, random_state=random_state)
-
-
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def main(train, val, test, class_weights):
+def oversample(dataset_x, dataset_y):
+
+    counts = Counter(dataset_y)
+    minority_class = min(counts.items(), key=operator.itemgetter(1))[0]
+    diff = max(Counter(dataset_y).values()) - min(Counter(dataset_y).values())
+    idx_minority = [i for i, e in enumerate(dataset_y) if e == minority_class]
+    rand_idx = random.choices(idx_minority, k=diff)
+    for i in rand_idx:
+        dataset_x.append(dataset_x[i])
+        dataset_y.append(dataset_y[i])
+    return dataset_x, dataset_y
+
+
+
+def main(train, val, test):
 
     """Train and evaluate the model"""
 
-    wandb.init(project="arg-qual", tags=[args.node_feat, args.quality_dim, str(args.epochs), str(args.lr), "val=test"])
-
+    wandb.init(project="arg-qual", tags=[args.node_feat, args.quality_dim, str(args.epochs), str(args.lr)])
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -89,18 +101,22 @@ def main(train, val, test, class_weights):
         shuffle=True)
 
     dataloader_val = DataLoader(
-            valset,
+            val,
             batch_size=10,
             collate_fn=collate,
             drop_last=False,
             shuffle=True)
 
     in_dim = trainset[0][0].ndata['x'].shape[1]  # define feature dim
-    model = GraphGATClassifier(in_dim, 10, 2)
-    loss_func = nn.CrossEntropyLoss(weight=class_weights)
+    out_dim = 2
+    model = GraphGATClassifier(in_dim, 16, out_dim)
+    loss_func = nn.CrossEntropyLoss()
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     set_seed(args)
+
+    val_no_improv = 0
+    min_val_acc = 0
 
     epoch_losses = []
     for epoch in range(args.epochs):
@@ -132,10 +148,21 @@ def main(train, val, test, class_weights):
         val_acc /= (iter + 1)
         print("Validation accuracy {:.2%} at epoch {}".format(val_acc, epoch))
         wandb.log({'val_acc': val_acc})
+        '''
+        if epoch > 100:
+            if val_acc == min_val_acc:
+                val_no_improv += 1
+            else:
+                min_val_acc = val_acc
+                val_no_improv = 0
+            if val_no_improv == 10:
+                print("Early stopping!")
+                break
+        '''
 
     # Evaluation
     dataloader_test = DataLoader(
-        testset,
+        test,
         batch_size=10,
         collate_fn=collate,
         drop_last=False,
@@ -156,9 +183,9 @@ if __name__ == "__main__":
         description="Main script")
     parser.add_argument("--gpu", type=int, default=-1,
                         help="which GPU to use. Set -1 to use CPU.")
-    parser.add_argument("--epochs", type=int, default=80,
+    parser.add_argument("--epochs", type=int, default=100,
                         help="number of training epochs")
-    parser.add_argument("--seed", type=int, default=42, 
+    parser.add_argument("--seed", type=int, default=20,
                         help="random seed for initialization")
     parser.add_argument("--num-heads", type=int, default=8,
                         help="number of hidden attention heads")
@@ -170,8 +197,10 @@ if __name__ == "__main__":
                         help="number of hidden units")
     parser.add_argument("--lr", type=float, default=0.0001,
                         help="learning rate")
-    parser.add_argument("--weight-decay", type=float, default=0.01,
+    parser.add_argument("--weight_decay", type=float, default=0.1,
                         help="weight decay")
+    parser.add_argument("--dropout", type=float, default=0.3,
+                        help="Dropout rate")
     parser.add_argument("--quality_dim", choices=["rel", "suf", "acc", "cog"],
                         default="cog",
                         help="Argument qulity dimension to evaluate: \
@@ -209,6 +238,7 @@ if __name__ == "__main__":
     elif args.node_feat == "bert":
         graphs_train, graphs_val, graphs_test, labels_train, labels_val, labels_test = split_sets(dataset["dgl_graphs_bert"], labels, 1)
 
+    #graphs_train, labels_train = oversample(graphs_train, labels_train)
 
     trainset = []
     for graph, label in zip(graphs_train, labels_train):
@@ -224,4 +254,4 @@ if __name__ == "__main__":
 
     class_weights = calculate_class_weights(labels_train)
 
-    main(trainset, testset, testset, class_weights)
+    main(trainset, valset, testset)
