@@ -117,10 +117,10 @@ def graph_to_dgl(graph_structures, enc_rel, node_feat='rand'):
         G.add_nodes(len(local_dict))
         # Use different feature types
         if node_feat == 'rand':
-            G.ndata['x'] = torch.zeros((len(local_dict), 5))
+            G.ndata['x'] = torch.zeros((len(local_dict), 300))
             # TODO: feature assignment using embeddings
             for k, v in local_dict.items():
-                G.nodes[[v]].data['x'] = torch.ones(1, 5)
+                G.nodes[[v]].data['x'] = torch.ones(1, 300)
         elif node_feat == 'glove':
             with open(args.glove_emb, "rb") as f:
                 glove_vectors = pickle.load(f)
@@ -173,6 +173,7 @@ if __name__ == '__main__':
     idx_text = graph_structures[0]  # dictionary with nodes id and corresponding text
     max_nodes = get_max_len(graph_scores['graphs'])
     enc_rel = encode_relations(graph_scores['graphs'])
+    print(enc_rel)
     dgl_graphs_rand = graph_to_dgl(graph_scores['graphs'], enc_rel)
     dgl_graphs_glove = graph_to_dgl(graph_scores['graphs'], enc_rel, node_feat='glove')
     dgl_graphs_bert = graph_to_dgl(graph_scores['graphs'], enc_rel, node_feat='bert')
