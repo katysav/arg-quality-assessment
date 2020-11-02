@@ -21,7 +21,7 @@ class GraphGATClassifier(nn.Module):
 
 
     def forward(self, g):
-        
+
         h = g.ndata['x']  # graph features
         h = F.elu(self.layer1(g, h)).flatten(1)
         h = F.elu(self.layer2(g, h)).flatten(1)
@@ -30,5 +30,4 @@ class GraphGATClassifier(nn.Module):
             g.ndata['h'] = h
             # Calculate graph representation by average readout.
             hg = dgl.mean_nodes(g, 'h')
-        hg = self.dropout(hg)
         return self.classify(hg)
