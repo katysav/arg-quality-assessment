@@ -109,14 +109,16 @@ def main(train, val, test):
 
     in_dim = trainset[0][0].ndata['x'].shape[1]  # define feature dim
     out_dim = 2
-    model = GraphGATClassifier(in_dim, 16, out_dim)
+    model = GraphGATClassifier(in_dim, 16, out_dim, args.dropout)
     loss_func = nn.CrossEntropyLoss()
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    wandb.log({'dropout': args.dropout})
 
     set_seed(args)
 
     val_no_improv = 0
     min_val_acc = 0
+
 
     epoch_losses = []
     for epoch in range(args.epochs):

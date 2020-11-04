@@ -11,9 +11,10 @@ import torch.nn.functional as F
 
 class GraphGATClassifier(nn.Module):
 
-    def __init__(self, in_dim, hidden_dim, num_classes):
+    def __init__(self, in_dim, hidden_dim, num_classes, p):
 
         super(GraphGATClassifier, self).__init__()
+        self.dropout = nn.Dropout(p)
         self.layer1 = GATConv(in_dim, hidden_dim, 1, allow_zero_in_degree=True)
         self.layer2 = GATConv(hidden_dim, hidden_dim, 1, allow_zero_in_degree=True)
         self.layer3 = GATConv(hidden_dim, hidden_dim, 1, allow_zero_in_degree=True)
@@ -30,4 +31,5 @@ class GraphGATClassifier(nn.Module):
             g.ndata['h'] = h
             # Calculate graph representation by average readout.
             hg = dgl.mean_nodes(g, 'h')
+        hg = self.dropout(hg)
         return self.classify(hg)
